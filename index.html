@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>원고 편집기</title>
+<meta name="theme-color" content="#2c4a6e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="원고">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang&family=Nanum+Gothic&family=Nanum+Myeongjo&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&display=swap">
+<style>
+@font-face{font-family:'KoPub Batang';src:url('KoPub_Batang_Light.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+/* 책상 위 한 장의 원고: 도구는 필요할 때만 꺼내고, 접으면 종이만 남는다 */
+:root{
+  --desk:#e3e6ea; --paper:#ffffff; --ink:#1f2328; --muted:#66707c; --line:#cdd3da;
+  --chrome:#f4f5f7; --hover:#e8ecf1; --accent:#2c4a6e; --accent-ink:#ffffff; --warn:#a4462b; --ok:#3d6b4a;
+  --serif:'KoPub Batang','KoPubBatang Light','KoPub바탕체 Light','Noto Serif KR',serif;
+  --ui:'Noto Sans KR',system-ui,-apple-system,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --desk:#121518; --paper:#1c2025; --ink:#dedad2; --muted:#8e97a1; --line:#313740;
+    --chrome:#181b1f; --hover:#252a31; --accent:#93b3da; --accent-ink:#0e1620; --warn:#e3906f; --ok:#8cc49b;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--ui);font-size:14px;overflow:hidden;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap;line-height:1.4}
+button:hover{background:var(--hover)}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.ghost{background:transparent;border-color:transparent}
+button.ghost:hover{background:var(--hover)}
+select,input[type=number],input[type=text],input:not([type]){background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:4px 7px}
+
+#app{display:flex;flex-direction:column;height:100%}
+#toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:max-content;max-width:min(92vw,520px);background:var(--ink);color:var(--paper);padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.55;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.icon{width:36px;height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;background:transparent;border-radius:8px;color:var(--ink);flex:none}
+.icon:hover,.icon[aria-expanded="true"]{background:var(--hover)}
+.icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.icons{display:flex;align-items:center;gap:2px}
+.pop{position:fixed;z-index:40;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.16);padding:6px;display:flex;flex-direction:column;gap:2px;min-width:240px;max-width:calc(100vw - 16px)}
+.pop-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 8px;font-size:13.5px}
+.pop-row select{max-width:150px}
+.pop-row input[type=number]{width:64px}
+.pop-row input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+.lh-wrap{display:flex;align-items:center;gap:6px}
+.lh-wrap input{width:110px;accent-color:var(--accent)}
+.mi{display:block;width:100%;border:0;background:transparent;text-align:left;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:14px;line-height:1.4;white-space:normal}
+.mi:hover{background:var(--hover)}
+.mi small{display:block;color:var(--muted);font-size:11.5px}
+.pop hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+@media (max-width:820px){ #bar .row{flex-wrap:wrap} #bar .icons{order:5;width:100%;justify-content:space-between} }
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);pointer-events:none}
+.btnlike{display:inline-block;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap;line-height:1.4;user-select:none}
+.btnlike:hover{background:var(--hover)}
+.btnlike:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#bar{background:var(--chrome);border-bottom:1px solid var(--line);flex:none;position:relative;z-index:5}
+.row{display:flex;align-items:center;gap:8px;padding-block:7px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#title{flex:1;min-width:0;border-color:transparent;background:transparent;font-size:15px;font-weight:500;padding:4px 6px}
+#title:hover,#title:focus{border-color:var(--line);background:var(--paper)}
+#saveState{font-size:12px;color:var(--muted);white-space:nowrap}
+#saveState.err{color:var(--warn)}
+.tools{display:flex;align-items:center;gap:6px;overflow-x:auto;padding-block:0 8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));scrollbar-width:thin}
+.tools > *{flex:none}
+.tools label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);white-space:nowrap}
+.sep{width:1px;height:20px;background:var(--line);margin:0 2px}
+#fsize{width:62px}
+#lh{width:90px;accent-color:var(--accent)}
+#indent{accent-color:var(--accent)}
+
+#exportMenu{position:fixed;z-index:40;background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.16);padding:6px;display:flex;flex-direction:column;min-width:220px}
+#exportMenu button{border:0;background:transparent;text-align:left;padding:8px 10px;border-radius:6px}
+#exportMenu button:hover{background:var(--hover)}
+#exportMenu small{display:block;color:var(--muted);font-size:11.5px}
+#exportMenu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+
+#findbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-block:0 9px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#findbox input{width:150px}
+#fInfo{font-size:13px;color:var(--muted)}
+
+#body{flex:1;min-height:0;display:flex;position:relative}
+#side{width:250px;flex:none;background:var(--chrome);border-right:1px solid var(--line);overflow:auto;padding:14px 12px 20px;display:flex;flex-direction:column;gap:22px}
+#app.side-off #side{display:none}
+.side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+#side h2{font-size:12px;letter-spacing:.06em;color:var(--muted);margin:0;font-weight:500}
+#side ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.ms{display:flex;align-items:center;gap:4px;border-radius:7px}
+.ms:hover,.ms.on{background:var(--hover)}
+.ms.on .ms-open{color:var(--accent)}
+.ms-open{flex:1;min-width:0;text-align:left;background:transparent;border:0;padding:7px 8px;display:flex;flex-direction:column;gap:2px}
+.ms-open:hover{background:transparent}
+.ms-t{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ms-m{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ms-m .dot{color:var(--accent)}
+.ms-del{border:0;background:transparent;color:var(--muted);padding:4px 7px;font-size:12px;opacity:0}
+.ms:hover .ms-del,.ms-del:focus-visible,.ms-del.arm{opacity:1}
+@media (hover:none){.ms-del{opacity:.7}}
+.ms-del.arm{color:var(--warn);font-weight:500}
+#outline li button{width:100%;text-align:left;background:transparent;border:0;padding:6px 8px;border-radius:6px;word-break:keep-all;white-space:normal}
+#outline li button:hover{background:var(--hover)}
+#outline .empty,.hint{color:var(--muted);font-size:12px;line-height:1.6;padding:2px 8px}
+.hint{margin:6px 0 0}
+#syncBox{margin-top:auto;border-top:1px solid var(--line);padding:14px 8px 0;display:flex;flex-direction:column;gap:8px}
+#syncState{font-size:12.5px;line-height:1.6;color:var(--muted)}
+#syncState b{color:var(--ink);font-weight:500}
+#syncState.err{color:var(--warn)}
+.syncBtns{display:flex;gap:6px;flex-wrap:wrap}
+
+#backdrop{display:none}
+#scroll{flex:1;min-width:0;overflow:auto;padding:0 24px;background:var(--paper)}
+#notice{max-width:720px;margin:16px auto 0;background:var(--paper);border:1px solid var(--accent);border-radius:8px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
+#notice span{flex:1;min-width:180px}
+#paper{position:relative;background:var(--paper);color:var(--ink);max-width:720px;margin:0 auto;min-height:100%;padding:56px 0 160px;
+  font-family:var(--font,var(--serif));font-size:var(--fs,16px);line-height:var(--lh,1.9);
+  text-align:justify;word-break:var(--wb,normal);letter-spacing:var(--ls,0);overflow-wrap:break-word;outline:none;caret-color:var(--accent)}
+#paper:focus,#paper:focus-visible{outline:none}
+#paper div,#paper p{margin:0;min-height:1em}
+#paper.indent > div:not(.chap),#paper.indent > p{text-indent:1em}
+#paper .chap{font-weight:700;font-size:1.2em;margin:1.4em 0 .7em;text-align:left;text-indent:0;color:var(--accent)}
+#paper .chap:first-child{margin-top:0}
+#paper.blank::before{content:"여기에 쓰기 시작하세요";position:absolute;left:0;top:56px;color:var(--muted);opacity:.6;pointer-events:none;text-indent:0}
+#paper[contenteditable="false"]{opacity:.55}
+
+#status{flex:none;display:flex;gap:6px 18px;flex-wrap:wrap;align-items:center;background:var(--chrome);border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);padding-block:6px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));font-variant-numeric:tabular-nums}
+#status b{color:var(--ink);font-weight:500}
+#syncTag{margin-left:auto}
+#syncTag.err{color:var(--warn)}
+
+#fab{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));z-index:20;opacity:.45;background:var(--chrome);display:none;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+#fab:hover,#fab:focus-visible{opacity:1}
+#app.focus #bar,#app.focus #status,#app.focus #side,#app.focus #backdrop{display:none}
+#app.focus #fab{display:inline-flex}
+#app.focus #scroll{padding-top:56px}
+
+@media (max-width:820px){
+  #side{position:fixed;z-index:30;top:0;bottom:0;left:0;width:min(300px,86vw);padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));padding-left:max(12px,env(safe-area-inset-left,0px));transform:translateX(-102%);transition:transform .2s ease;box-shadow:4px 0 24px rgba(0,0,0,.18)}
+  #app.side-off #side{display:flex}
+  #app.drawer #side{transform:none}
+  #app.drawer #backdrop{display:block;position:fixed;inset:0;z-index:25;background:rgba(0,0,0,.28)}
+  #scroll{padding:0 max(20px,env(safe-area-inset-right,0px)) 0 max(20px,env(safe-area-inset-left,0px))}
+  #paper{padding:28px 0 120px}
+  #paper.blank::before{left:0;top:28px}
+  #saveState{display:none}
+}
+@media (prefers-reduced-motion:reduce){#side{transition:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="bar">
+    <div class="row">
+      <button id="sideBtn" class="icon" title="원고 목록과 목차" aria-label="원고 목록과 목차"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <input id="title" type="text" placeholder="제목 없는 원고" aria-label="원고 제목" autocomplete="off">
+      <span id="saveState"></span>
+      <div class="icons" id="tools">
+        <button data-cmd="undo" class="icon" title="되돌리기 (Ctrl+Z)" aria-label="되돌리기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+        <button data-cmd="redo" class="icon" title="다시하기 (Ctrl+Y)" aria-label="다시하기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+        <button id="fmtBtn" class="icon" data-pop="fmtPop" aria-haspopup="true" aria-expanded="false" title="서식 (글꼴·크기·줄간격·들여쓰기)" aria-label="서식"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg></button>
+        <button id="findBtn" class="icon" title="찾기·바꾸기 (Ctrl+F)" aria-label="찾기·바꾸기"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+        <button id="openBtn" class="icon" data-pop="openPop" aria-haspopup="true" aria-expanded="false" title="불러오기" aria-label="불러오기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+        <button id="exportBtn" class="icon" data-pop="exportMenu" aria-haspopup="true" aria-expanded="false" title="저장·내보내기" aria-label="저장·내보내기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg></button>
+      </div>
+      <button id="hideBtn" class="icon" title="메뉴 접기 (Esc)" aria-label="메뉴 접기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg></button>
+    </div>
+    <div id="findbox" hidden>
+      <input id="fFind" type="text" placeholder="찾을 말" aria-label="찾을 말">
+      <input id="fRep" type="text" placeholder="바꿀 말" aria-label="바꿀 말">
+      <button id="fCount">개수 세기</button>
+      <button id="fOne">하나 바꾸기</button>
+      <button id="fAll">모두 바꾸기</button>
+      <span id="fInfo"></span>
+      <button id="fClose" class="ghost">닫기</button>
+    </div>
+  </header>
+
+  <div id="fmtPop" class="pop" hidden>
+    <label class="pop-row">글꼴 <select id="font" aria-label="글꼴">
+        <option value="'KoPub Batang','KoPubBatang Light','KoPub바탕체 Light',serif" data-w="KoPubBatang Light" data-wk="KoPub바탕체 Light">코펍 바탕</option>
+        <option value="'Noto Serif KR',serif" data-w="Noto Serif KR" data-wk="Noto Serif KR">본명조</option>
+        <option value="'Nanum Myeongjo',serif" data-w="NanumMyeongjo" data-wk="나눔명조">나눔명조</option>
+        <option value="'Gowun Batang',serif" data-w="Gowun Batang" data-wk="고운바탕">고운바탕</option>
+        <option value="'Nanum Gothic',sans-serif" data-w="NanumGothic" data-wk="나눔고딕">나눔고딕</option>
+      </select></label>
+    <label class="pop-row">글자 크기 <input id="fsize" type="number" min="11" max="30" step="1" value="16"></label>
+    <label class="pop-row">줄간격 <span class="lh-wrap"><input id="lh" type="range" min="1.3" max="3" step="0.05" value="1.9"> <span id="lhVal">1.9</span></span></label>
+    <label class="pop-row">첫 줄 들여쓰기 <input id="indent" type="checkbox" checked></label>
+  </div>
+  <div id="openPop" class="pop menu" role="menu" hidden>
+    <label id="importBtn" for="fileIn" class="mi" role="menuitem" tabindex="0">이 기기의 파일<small>HWP·HWPX·TXT, 원고 백업(.json)</small></label>
+  </div>
+
+  <div id="exportMenu" class="pop menu" role="menu" hidden>
+    <button id="exHwpx" class="mi" role="menuitem">한글 파일 (.hwpx)<small>이 기기에 저장</small></button>
+    <button id="exDocx" class="mi" role="menuitem">Word 파일 (.docx)<small>이 기기에 저장</small></button>
+    <button id="exTxt" class="mi" role="menuitem">텍스트 (.txt)<small>이 기기에 저장</small></button>
+    <hr>
+    <button id="exDrive" class="mi" role="menuitem">드라이브에 한글 파일 저장<small>'원고 편집기' 폴더, 원고마다 한 파일</small></button>
+    <hr>
+    <button id="exBackup" class="mi" role="menuitem">모든 원고 백업 (.json)<small>다른 기기·앱으로 옮길 때</small></button>
+  </div>
+
+  <div id="body">
+    <aside id="side" aria-label="원고 목록과 목차">
+      <section>
+        <div class="side-head"><h2>원고</h2><button id="newBtn" class="primary">+ 새 원고</button></div>
+        <ul id="msList"><li class="hint">불러오는 중…</li></ul>
+      </section>
+      <section>
+        <div class="side-head"><h2>목차</h2></div>
+        <ul id="outline"></ul>
+        <p class="hint">'제1장', '1.', '#'으로 시작하는 줄이 여기에 나타납니다.</p>
+      </section>
+      <div id="syncBox">
+        <div id="syncState">구글 드라이브</div>
+        <div class="syncBtns">
+          <button id="syncBtn" class="primary" hidden>드라이브 연결</button>
+          <button id="syncNowBtn" hidden>지금 동기화</button>
+          <button id="driveOffBtn" class="ghost" hidden>연결 끊기</button>
+          <button id="installBtn" hidden>앱으로 설치</button>
+        </div>
+      </div>
+    </aside>
+    <div id="backdrop"></div>
+    <main id="scroll">
+      <div id="notice" hidden><span id="noticeText"></span><button id="noticeBtn" class="primary" hidden></button><button id="noticeClose" class="ghost">닫기</button></div>
+      <article id="paper" contenteditable="false" spellcheck="false" class="blank"></article>
+    </main>
+  </div>
+
+  <footer id="status">
+    <span>공백 포함 <b id="sChars">0</b>자</span>
+    <span>공백 제외 <b id="sNoSp">0</b>자</span>
+    <span>원고지 <b id="sPages">0</b>매</span>
+    <span id="syncTag"></span>
+  </footer>
+
+  <button id="fab" class="icon" title="메뉴 펼치기 (Esc)" aria-label="메뉴 펼치기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+<div id="toast" role="status" hidden></div>
+  <input id="fileIn" type="file" class="vh" tabindex="-1" aria-hidden="true">
+</div>
+<script src="config.js"></script>
+<script src="hwpx-template.js"></script>
+<script src="hangul.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
