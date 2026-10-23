@@ -1,11 +1,11 @@
 {
-  "name": "원고 편집기",
-  "short_name": "원고",
+  "name": "MYWONGO",
+  "short_name": "MYWONGO",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#e3e6ea",
+  "background_color": "#ffffff",
   "theme_color": "#2c4a6e",
   "icons": [
     {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
