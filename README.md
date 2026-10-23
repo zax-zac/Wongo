@@ -8,7 +8,7 @@
 - 장면 목록: 별표(＊)나 숫자만 있는 줄을 장면 구분으로 보고 목록을 만듦
 - 휴지통(아이콘): 지운 원고는 30일간 보관 후 자동 삭제
 - 맞춤법 교정은 claude.ai 쪽 편집기에서만 됩니다 (이 앱에는 없음)
-- HWP·HWPX·TXT 불러오기, 한글(.hwpx)·Word·TXT로 저장
+- HWP·HWPX·TXT 불러오기(이 기기·구글 드라이브), 한글(.hwpx)·Word·TXT로 저장
 - 원고는 먼저 기기에 저장되고, 드라이브에 연결해 두면 PC·휴대폰·태블릿이 서로 이어짐
 
 **주소**: https://zax-zac.github.io/Wongo/ (저장소 이름의 대소문자 그대로 `Wongo`)
@@ -42,6 +42,8 @@
 4. **본인을 테스트 사용자로 넣기**: [대상(Audience)](https://console.cloud.google.com/auth/audience) 화면의 **테스트 사용자**에서 **사용자 추가**를 누르고 본인 Gmail 주소를 넣은 뒤 저장합니다. 이 앱은 본인만 쓰므로 '테스트' 상태 그대로 두면 됩니다.
 5. **권한 범위 넣기**: [데이터 액세스](https://console.cloud.google.com/auth/scopes) 화면에서 **범위 추가 또는 삭제**를 누릅니다. 아래칸 '직접 범위 추가'에 `https://www.googleapis.com/auth/drive.file`을 붙여 넣고 **표에 추가 → 업데이트 → 저장**을 누릅니다.
    - 이 범위로는 앱이 직접 만든 파일만 볼 수 있습니다. 드라이브에 있는 다른 파일에는 손대지 못합니다.
+5-1. **(드라이브 파일 열기용) 읽기 권한 추가**: 같은 화면에서 **범위 추가 또는 삭제**를 다시 눌러 `https://www.googleapis.com/auth/drive.readonly`도 같은 방법으로 추가합니다. 불러오기 → **구글 드라이브의 파일**에서 드라이브에 있는 HWP·HWPX·TXT를 고르려면 필요합니다.
+   - 이 권한은 '고르기' 버튼을 누를 때만 따로 요청하고, 읽기만 합니다. 저장·동기화는 위의 `drive.file` 범위로만 합니다.
 6. **클라이언트 만들기**: [클라이언트 만들기](https://console.cloud.google.com/auth/clients/create)에서 아래처럼 채우고 **만들기**를 누릅니다.
    - 애플리케이션 유형: **웹 애플리케이션**
    - 이름: `wongo-web`
@@ -53,7 +55,7 @@
    ```js
    window.WONGO_CONFIG = { googleClientId: '여기에-붙여넣기.apps.googleusercontent.com' };
    ```
-   그리고 `sw.js` 맨 위의 `VERSION`을 하나 올립니다. 예: `wongo-v9` → `wongo-v10`.
+   그리고 `sw.js` 맨 위의 `VERSION`을 하나 올립니다. 예: `wongo-v10` → `wongo-v11`.
 
 이제 편집기를 열고 목록 아래 **드라이브 연결**을 누릅니다.
 - 처음에는 "Google에서 확인하지 않은 앱"이라는 경고가 뜹니다. 본인이 만든 앱이므로 **계속**을 누르면 됩니다.

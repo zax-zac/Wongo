@@ -475,8 +475,8 @@ $('#importBtn').addEventListener('click', () => {
     if(!opened) toast('이 화면에서는 기기의 파일 선택 창이 열리지 않습니다. 크롬이나 사파리에서 열어 주세요.', 10000);
   }, 1500);
 });
-$('#fileIn').onchange = async () => {
-  const f = $('#fileIn').files[0]; $('#fileIn').value = ''; if(!f) return;
+$('#fileIn').onchange = () => { const f = $('#fileIn').files[0]; $('#fileIn').value = ''; if(f) importFile(f); };
+async function importFile(f){
   const ext = ((f.name.match(/\.([^.]+)$/) || [])[1] || '').toLowerCase();
   const title = f.name.replace(/\.(txt|hwp|hwpx|json)$/i, '');
   setSave('saving', '불러오는 중…');
@@ -496,7 +496,7 @@ $('#fileIn').onchange = async () => {
     await newMs(title, html);
     setSave('saved', f.name + ' 불러옴');
   }catch(e){ setSave('error', importErrors[e && e.message] || '이 파일을 읽지 못했습니다'); }
-};
+}
 async function importBackup(text){
   const data = JSON.parse(text);
   const items = Array.isArray(data) ? data : data && Array.isArray(data.manuscripts) ? data.manuscripts : null;
@@ -746,15 +746,17 @@ const Drive = (() => {
       document.head.appendChild(s);
     });
   }
-  async function requestToken(){
+  async function requestToken(scope){
+    scope = scope || SCOPE;
     await loadGis();
     return new Promise((ok, bad) => {
       const client = google.accounts.oauth2.initTokenClient({
-        client_id: CID, scope: SCOPE, prompt: '',
+        client_id: CID, scope, prompt: '',
         callback: resp => {
-          if(resp && resp.access_token && google.accounts.oauth2.hasGrantedAllScopes(resp, SCOPE)){
-            token = resp.access_token; exp = Date.now() + (Number(resp.expires_in || 3600) - 120) * 1000;
-            lsSet('token', {token, exp}); ok();
+          if(resp && resp.access_token && google.accounts.oauth2.hasGrantedAllScopes(resp, scope)){
+            const t = resp.access_token, e = Date.now() + (Number(resp.expires_in || 3600) - 120) * 1000;
+            if(scope === SCOPE){ token = t; exp = e; lsSet('token', {token, exp}); }
+            ok({token: t, exp: e});
           } else bad({code: 'denied'});
         },
         error_callback: e => bad({code: e && e.type === 'popup_failed_to_open' ? 'popup' : 'denied'})
@@ -915,6 +917,79 @@ const Drive = (() => {
       return await upload(ex.length ? ex[0].id : null, ex.length ? {name} : {name, parents: [root], mimeType: 'application/hwp+zip', appProperties: {kind: 'hwpx', wpId: id}}, blob, 'application/hwp+zip');
     }catch(e){ if(e.code === 'notfound') folders = null; throw e; }
   }
+  /* ---- 드라이브에서 파일 열기: 드라이브 전체를 읽기 전용으로 훑어 HWP·HWPX·TXT·백업(.json)을 보여 준다 ---- */
+  const READ_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+  let ro = null, pickFiles = null, pickBusy = false;
+  const roOk = () => !!ro && ro.exp > Date.now();
+  const okExt = n => /\.(hwp|hwpx|txt|json)$/i.test(n || '');
+  const dlg = $('#drvDlg'), dlgList = $('#drvList'), dlgMsg = $('#drvMsg'), dlgQ = $('#drvQ');
+  const fmtSize = n => { n = Number(n) || 0; return n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; };
+  const fmtDay = t => { const d = new Date(t); return isNaN(d) ? '' : d.getFullYear() + '.' + (d.getMonth() + 1) + '.' + d.getDate(); };
+  function drawPick(){
+    const q = dlgQ.value.trim().toLowerCase();
+    const rows = (pickFiles || []).filter(f => !q || f.name.toLowerCase().includes(q));
+    dlgList.innerHTML = '';
+    for(const f of rows.slice(0, 200)){
+      const li = document.createElement('li'), b = document.createElement('button');
+      b.className = 'mi'; b.type = 'button';
+      b.innerHTML = '<span class="ms-t"></span><small></small>';
+      b.firstChild.textContent = f.name; b.lastChild.textContent = fmtDay(f.modifiedTime) + ' · ' + fmtSize(f.size);
+      b.onclick = () => openPicked(f);
+      li.appendChild(b); dlgList.appendChild(li);
+    }
+    if(pickFiles) dlgMsg.textContent = rows.length ? '' : (q ? '이름에 맞는 파일이 없습니다.' : '드라이브에서 HWP·HWPX·TXT 파일을 찾지 못했습니다.');
+  }
+  async function roFetch(path){
+    let r;
+    try{ r = await fetch('https://www.googleapis.com' + path, {headers: {Authorization: 'Bearer ' + ro.token}}); }catch(e){ throw {code: 'network'}; }
+    if(r.status === 401){ ro = null; throw {code: 'auth'}; }
+    if(!r.ok) throw {code: 'http', status: r.status};
+    return r;
+  }
+  async function loadPick(){
+    pickBusy = true; pickFiles = null; dlgList.innerHTML = ''; dlgMsg.textContent = '드라이브에서 찾는 중…';
+    try{
+      const out = []; let page = '';
+      for(let i = 0; i < 5; i++){
+        const r = await (await roFetch('/drive/v3/files?q=' + enc("trashed=false and mimeType!='application/vnd.google-apps.folder'") + '&orderBy=modifiedTime%20desc&pageSize=200&fields=' + enc('nextPageToken,files(id,name,size,modifiedTime)') + (page ? '&pageToken=' + enc(page) : ''))).json();
+        for(const f of r.files || []) if(okExt(f.name)) out.push(f);
+        page = r.nextPageToken || ''; if(!page) break;
+      }
+      pickFiles = out; drawPick();
+    }catch(e){ dlgMsg.textContent = e.code === 'network' ? '인터넷에 연결되어 있지 않습니다.' : e.code === 'auth' ? '연결이 만료되었습니다. 다시 열어 주세요.' : '드라이브 목록을 읽지 못했습니다.'; }
+    finally{ pickBusy = false; }
+  }
+  async function openPicked(f){
+    dlgMsg.textContent = '「' + f.name + '」 가져오는 중…';
+    try{
+      const blob = await (await roFetch('/drive/v3/files/' + f.id + '?alt=media')).blob();
+      closePick();
+      await importFile(new File([blob], f.name));
+    }catch(e){ dlgMsg.textContent = e.code === 'network' ? '인터넷에 연결되어 있지 않습니다.' : '파일을 가져오지 못했습니다.'; }
+  }
+  function closePick(){ dlg.hidden = true; }
+  async function pick(){
+    if(!CID){ toast('구글 드라이브 설정이 아직 되어 있지 않습니다.'); return; }
+    if(navigator.onLine === false){ toast('인터넷에 연결된 뒤 드라이브에서 열 수 있습니다.'); return; }
+    if(!roOk()){
+      try{ ro = await requestToken(READ_SCOPE); }
+      catch(e){
+        toast(e.code === 'popup' ? '로그인 창이 막혔습니다. 팝업 차단을 풀고 다시 눌러 주세요.' : e.code === 'network' ? '인터넷에 연결되어 있지 않습니다.' : '드라이브를 읽을 권한을 받지 못했습니다. 설정 안내서의 \'드라이브 파일 읽기 권한\' 단계를 확인해 주세요.', 9000);
+        return;
+      }
+    }
+    dlg.hidden = false; dlgQ.value = '';
+    if(!pickFiles || !roOk()) loadPick(); else drawPick();
+    if(!narrow()) dlgQ.focus();
+  }
+  dlgQ.addEventListener('input', drawPick);
+  $('#drvClose').onclick = closePick;
+  $('#drvReload').onclick = () => { if(!pickBusy) loadPick(); };
+  dlg.addEventListener('click', e => { if(e.target === dlg) closePick(); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && !dlg.hidden){ closePick(); e.stopPropagation(); } }, true);
+  $('#opDrive').onclick = () => setTimeout(pick, 0);
+  if(!CID) $('#opDrive').hidden = true;
+
   function errorText(e){
     const c = e && e.code;
     if(c === 'network') return '인터넷에 연결되어 있지 않습니다. 연결된 뒤 다시 시도해 주세요';

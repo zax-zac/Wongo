@@ -44,6 +44,15 @@ button.ghost:hover{background:var(--hover)}
 select,input[type=number],input[type=text],input:not([type]){background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:4px 7px}
 
 #app{display:flex;flex-direction:column;height:100%}
+#drvDlg{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:12px}
+#drvDlg[hidden]{display:none}
+#drvBox{background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);width:min(520px,100%);max-height:min(640px,calc(100dvh - 24px));display:flex;flex-direction:column;overflow:hidden}
+#drvBox header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px 6px}
+#drvBox h2{font-size:15px;margin:0}
+#drvQ{margin:4px 14px 6px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:14px}
+#drvMsg{padding:2px 16px;font-size:12.5px;color:var(--muted);min-height:18px}
+#drvList{list-style:none;margin:0;padding:4px 6px 8px;overflow:auto;flex:1}
+#drvList .mi small{margin-top:1px}
 #toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:max-content;max-width:min(92vw,520px);background:var(--ink);color:var(--paper);padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.55;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 .icon{width:36px;height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;background:transparent;border-radius:8px;color:var(--ink);flex:none}
 .icon:hover,.icon[aria-expanded="true"]{background:var(--hover)}
@@ -227,6 +236,7 @@ select,input[type=number],input[type=text],input:not([type]){background:var(--pa
   </div>
   <div id="openPop" class="pop menu" role="menu" hidden>
     <label id="importBtn" for="fileIn" class="mi" role="menuitem" tabindex="0">이 기기의 파일<small>HWP·HWPX·TXT, 원고 백업(.json)</small></label>
+    <button id="opDrive" class="mi" role="menuitem">구글 드라이브의 파일<small>드라이브에 있는 HWP·HWPX·TXT 고르기</small></button>
   </div>
 
   <div id="exportMenu" class="pop menu" role="menu" hidden>
@@ -279,6 +289,14 @@ select,input[type=number],input[type=text],input:not([type]){background:var(--pa
   </footer>
 
   <button id="fab" class="icon" title="메뉴 펼치기 (Esc)" aria-label="메뉴 펼치기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+<div id="drvDlg" hidden role="dialog" aria-modal="true" aria-label="드라이브에서 열기">
+  <div id="drvBox">
+    <header><h2>드라이브에서 열기</h2><span><button id="drvReload" class="ghost" type="button">새로고침</button> <button id="drvClose" class="ghost" type="button">닫기</button></span></header>
+    <input id="drvQ" type="search" placeholder="파일 이름으로 찾기" autocomplete="off">
+    <div id="drvMsg" aria-live="polite"></div>
+    <ul id="drvList"></ul>
+  </div>
+</div>
 <div id="toast" role="status" hidden></div>
   <input id="fileIn" type="file" class="vh" tabindex="-1" aria-hidden="true">
 </div>
