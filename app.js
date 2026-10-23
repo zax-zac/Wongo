@@ -318,7 +318,24 @@ async function onRemote(ch){
 }
 
 /* ---------- 메뉴 접기 · 목록 ---------- */
-function setFocus(on){ prefs.focus = on; savePrefs(); app.classList.toggle('focus', on); if(on){ drawer(false); closeMenu(); } }
+function setFocus(on){ prefs.focus = on; savePrefs(); app.classList.toggle('focus', on); $('#fab').classList.remove('away'); fullScreen(on); if(on){ drawer(false); closeMenu(); } }
+/* 메뉴를 접으면 전체 화면(주소창 숨김), 펼치면 원래대로. 지원하지 않는 기기는 그냥 넘어간다 */
+function fullScreen(on){
+  try{
+    const d = document;
+    if(on && d.fullscreenEnabled && !d.fullscreenElement) d.documentElement.requestFullscreen({navigationUI: 'hide'}).catch(() => {});
+    else if(!on && d.fullscreenElement) d.exitFullscreen().catch(() => {});
+  }catch(e){}
+}
+/* 메뉴 버튼이 글과 겹치지 않게: 아래로 내리면 숨고, 위로 올리면 다시 나타난다 */
+let fabTop = 0;
+$('#scroll').addEventListener('scroll', () => {
+  const t = $('#scroll').scrollTop;
+  if(t > fabTop + 4 && t > 40) $('#fab').classList.add('away');
+  else if(t < fabTop - 4 || t <= 40) $('#fab').classList.remove('away');
+  if(Math.abs(t - fabTop) > 4 || t <= 40) fabTop = t;
+}, {passive: true});
+
 function drawer(on){ app.classList.toggle('drawer', on); }
 $('#hideBtn').onclick = () => setFocus(true);
 $('#fab').onclick = () => setFocus(false);

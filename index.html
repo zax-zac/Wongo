@@ -165,6 +165,9 @@ select,input[type=number],input[type=text],input:not([type]){background:var(--pa
 #fab:hover,#fab:focus-visible{opacity:1}
 #app.focus #bar,#app.focus #status,#app.focus #side,#app.focus #backdrop{display:none}
 #app.focus #fab{display:inline-flex}
+#fab{transition:opacity .2s ease,transform .2s ease}
+#fab.away{opacity:0;pointer-events:none;transform:translateY(-10px)}
+
 #app.focus #scroll{padding-top:56px}
 
 @media (max-width:820px){
