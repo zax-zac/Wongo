@@ -93,14 +93,36 @@ function stats(){
 const chapRe = /^(제\s*\d+\s*[장화부막편]|\d+\s*[.)]\s|#\s)/;
 let olTimer;
 function outlineSoon(){ clearTimeout(olTimer); olTimer = setTimeout(outline, 500); }
+/* 장면 목록: '제1장'·'1. '·'# '으로 시작하는 장 제목, 기호만 있는 줄(*, ***, ＊ …), 숫자만 있는 줄로 나눈 자리를 모은다.
+   나눈 자리가 하나도 없으면 칸째 숨긴다. */
+const sceneRe = /^[\s*＊✱✲⁂∗★☆◆◇○●·•~\-–—]+$/;
+const numRe = /^(\d{1,3}|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]+)\.?$/;
 function outline(){
   const ul = $('#outline'); ul.textContent = '';
-  const items = [...paper.children].filter(el => el.classList.contains('chap') || chapRe.test(el.innerText.trim()));
-  if(!items.length){ const li = document.createElement('li'); li.className = 'empty'; li.textContent = '아직 항목이 없습니다'; ul.appendChild(li); return; }
-  for(const el of items){
+  const blocks = [...paper.children];
+  const textOf = el => el.innerText.replace(/\s+/g, ' ').trim();
+  const kindOf = el => { const t = textOf(el); if(!t) return null; if(el.classList.contains('chap') || chapRe.test(t)) return 'chap'; if(numRe.test(t)) return 'num'; if(sceneRe.test(t)) return 'div'; return null; };
+  const firstText = (from, to) => { for(let k = from; k < to; k++){ const t = textOf(blocks[k]); if(t && !kindOf(blocks[k])) return {el: blocks[k], t}; } return null; };
+  const marks = []; blocks.forEach((el, i) => { const k = kindOf(el); if(k) marks.push({el, i, k}); });
+  const items = [];
+  if(marks.length){
+    let scene = 0;
+    const pre = firstText(0, marks[0].i);
+    if(pre){ scene = 1; items.push({el: pre.el, t: marks[0].k === 'chap' ? '처음' : '장면 1', s: pre.t}); }
+    marks.forEach((m, j) => {
+      const end = j + 1 < marks.length ? marks[j + 1].i : blocks.length;
+      const f = firstText(m.i + 1, end);
+      if(m.k === 'chap'){ scene = f ? 1 : 0; items.push({el: m.el, t: textOf(m.el).replace(/^#\s*/, ''), s: '', chap: true}); }
+      else { scene++; items.push({el: m.el, t: m.k === 'num' ? textOf(m.el).replace(/\.$/, '') : '장면 ' + scene, s: f ? f.t : ''}); }
+    });
+  }
+  $('#outlineSec').hidden = !items.length;
+  for(const it of items){
     const li = document.createElement('li'), b = document.createElement('button');
-    b.textContent = el.innerText.trim().replace(/^#\s*/, '').slice(0, 40) || '(제목 없음)';
-    b.onclick = () => { el.scrollIntoView({behavior: 'smooth', block: 'start'}); if(narrow()) drawer(false); };
+    const t = document.createElement('span'); t.className = 'ol-t' + (it.chap ? ' chap' : ''); t.textContent = it.t.slice(0, 40);
+    b.appendChild(t);
+    if(it.s){ const s = document.createElement('span'); s.className = 'ol-s'; s.textContent = it.s.slice(0, 40); b.appendChild(s); }
+    b.onclick = () => { it.el.scrollIntoView({behavior: 'smooth', block: 'start'}); if(narrow()) drawer(false); };
     li.appendChild(b); ul.appendChild(li);
   }
 }
@@ -190,7 +212,8 @@ const TRASH_DAYS = 30;
 function renderTrash(){
   const ul = $('#trashList'); ul.textContent = '';
   $('#trashToggle').hidden = !trash.length;
-  $('#trashCount').textContent = trash.length ? '(' + trash.length + ')' : '';
+  const tl = trash.length ? '휴지통 (' + trash.length + '편)' : '휴지통';
+  $('#trashToggle').title = tl; $('#trashToggle').setAttribute('aria-label', tl);
   if(!trash.length){ $('#trashPanel').hidden = true; $('#trashToggle').setAttribute('aria-expanded', 'false'); return; }
   for(const m of trash.slice().sort((a, b) => (b.trashedAt || 0) - (a.trashedAt || 0))){
     const li = document.createElement('li'); li.className = 'ms';
