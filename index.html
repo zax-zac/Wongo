@@ -107,6 +107,15 @@ select,input[type=number],input[type=text],input:not([type]){background:var(--pa
 .ms:hover .ms-del,.ms-del:focus-visible,.ms-del.arm{opacity:1}
 @media (hover:none){.ms-del{opacity:.7}}
 .ms-del.arm{color:var(--warn);font-weight:500}
+.trash-toggle{margin-top:10px;width:100%;text-align:left;background:transparent;border:0;color:var(--muted);font-size:12.5px;padding:6px 8px;border-radius:6px}
+.trash-toggle:hover{background:var(--hover)}
+#trashList .ms-t{color:var(--muted)}
+#trashList .ms-open{cursor:default}
+.tr-btns{display:flex;gap:2px;flex:none}
+.tr-btn{border:0;background:transparent;font-size:12px;padding:4px 6px;color:var(--accent)}
+.tr-btn.del{color:var(--muted)}
+.tr-btn.arm,#trashEmpty.arm{color:var(--warn);font-weight:500}
+#trashEmpty{font-size:12.5px;margin:4px 0 0 2px}
 #outline li button{width:100%;text-align:left;background:transparent;border:0;padding:6px 8px;border-radius:6px;word-break:keep-all;white-space:normal}
 #outline li button:hover{background:var(--hover)}
 #outline .empty,.hint{color:var(--muted);font-size:12px;line-height:1.6;padding:2px 8px}
@@ -215,6 +224,12 @@ select,input[type=number],input[type=text],input:not([type]){background:var(--pa
       <section>
         <div class="side-head"><h2>원고</h2><button id="newBtn" class="primary">+ 새 원고</button></div>
         <ul id="msList"><li class="hint">불러오는 중…</li></ul>
+        <button id="trashToggle" class="trash-toggle" aria-expanded="false" hidden>휴지통 <span id="trashCount"></span></button>
+        <div id="trashPanel" hidden>
+          <ul id="trashList"></ul>
+          <p class="hint">휴지통의 원고는 30일이 지나면 저절로 지워집니다.</p>
+          <button id="trashEmpty" class="ghost">휴지통 비우기</button>
+        </div>
       </section>
       <section>
         <div class="side-head"><h2>목차</h2></div>

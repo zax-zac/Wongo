@@ -111,9 +111,11 @@ function fmtWhen(t){
   const d = new Date(t);
   return d.toDateString() === new Date().toDateString() ? hhmm(t) : (d.getMonth() + 1) + '월 ' + d.getDate() + '일';
 }
+let trash = [];
 async function refreshList(){
-  list = (await DB.all()).filter(r => !r.deleted);
-  renderList();
+  const all = (await DB.all()).filter(r => !r.deleted);
+  list = all.filter(r => !r.trashed); trash = all.filter(r => r.trashed);
+  renderList(); renderTrash();
 }
 function renderList(){
   const ul = $('#msList'); ul.textContent = '';
@@ -127,12 +129,8 @@ function renderList(){
     mm.textContent = ((m.chars || 0) / 200).toFixed(1) + '매 · ' + fmtWhen(m.updatedAt);
     if(m.dirty && Drive.enabled()){ const dot = document.createElement('span'); dot.className = 'dot'; dot.textContent = ' · 올릴 내용 있음'; mm.appendChild(dot); }
     open.append(t, mm); open.onclick = () => openMs(m.id);
-    const del = document.createElement('button'); del.className = 'ms-del'; del.textContent = '삭제'; del.title = '이 원고 삭제';
-    let armT;
-    del.onclick = () => {
-      if(!del.classList.contains('arm')){ del.classList.add('arm'); del.textContent = '정말 삭제'; armT = setTimeout(() => { del.classList.remove('arm'); del.textContent = '삭제'; }, 3000); return; }
-      clearTimeout(armT); removeMs(m.id);
-    };
+    const del = document.createElement('button'); del.className = 'ms-del'; del.textContent = '삭제'; del.title = '휴지통으로 옮기기';
+    del.onclick = () => trashMs(m.id);
     li.append(open, del); ul.appendChild(li);
   }
 }
@@ -187,6 +185,76 @@ async function newMs(title, html){
   lsSet('last', id); await refreshList();
   paper.focus();
 }
+/* ---------- 휴지통 ---------- */
+const TRASH_DAYS = 30;
+function renderTrash(){
+  const ul = $('#trashList'); ul.textContent = '';
+  $('#trashToggle').hidden = !trash.length;
+  $('#trashCount').textContent = trash.length ? '(' + trash.length + ')' : '';
+  if(!trash.length){ $('#trashPanel').hidden = true; $('#trashToggle').setAttribute('aria-expanded', 'false'); return; }
+  for(const m of trash.slice().sort((a, b) => (b.trashedAt || 0) - (a.trashedAt || 0))){
+    const li = document.createElement('li'); li.className = 'ms';
+    const info = document.createElement('div'); info.className = 'ms-open';
+    const t = document.createElement('span'); t.className = 'ms-t'; t.textContent = m.title || '제목 없는 원고';
+    const mm = document.createElement('span'); mm.className = 'ms-m';
+    const left = Math.max(0, TRASH_DAYS - Math.floor((Date.now() - (m.trashedAt || Date.now())) / 86400000));
+    mm.textContent = ((m.chars || 0) / 200).toFixed(1) + '매 · ' + left + '일 뒤 지워짐';
+    info.append(t, mm);
+    const btns = document.createElement('div'); btns.className = 'tr-btns';
+    const back = document.createElement('button'); back.className = 'tr-btn'; back.textContent = '되살리기';
+    back.onclick = () => restoreMs(m.id);
+    const del = document.createElement('button'); del.className = 'tr-btn del'; del.textContent = '완전 삭제';
+    let armT;
+    del.onclick = () => {
+      if(!del.classList.contains('arm')){ del.classList.add('arm'); del.textContent = '정말 삭제'; armT = setTimeout(() => { del.classList.remove('arm'); del.textContent = '완전 삭제'; }, 3000); return; }
+      clearTimeout(armT); purgeMs([m.id]);
+    };
+    btns.append(back, del); li.append(info, btns); ul.appendChild(li);
+  }
+}
+$('#trashToggle').onclick = () => {
+  const open = $('#trashPanel').hidden;
+  $('#trashPanel').hidden = !open; $('#trashToggle').setAttribute('aria-expanded', String(open));
+};
+let emptyArmT;
+$('#trashEmpty').onclick = () => {
+  const b = $('#trashEmpty');
+  if(!b.classList.contains('arm')){ b.classList.add('arm'); b.textContent = '정말 비우기 (' + trash.length + '편)'; emptyArmT = setTimeout(() => { b.classList.remove('arm'); b.textContent = '휴지통 비우기'; }, 3000); return; }
+  clearTimeout(emptyArmT); b.classList.remove('arm'); b.textContent = '휴지통 비우기';
+  purgeMs(trash.map(x => x.id));
+};
+async function openNext(){
+  cur = null; dirty = false;
+  const next = list.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+  if(next) await openMs(next.id); else await newMs();
+}
+async function trashMs(id){
+  if(cur && cur.id === id) await flush();
+  const r = await DB.get(id); if(!r) return;
+  if(!r.fileId && isBlank(r)) await DB.del(id);  // 아무것도 안 쓴 새 원고는 바로 지움
+  else await DB.update(id, x => x ? Object.assign({}, x, {trashed: true, trashedAt: Date.now(), dirty: true}) : undefined);
+  await refreshList();
+  if(cur && cur.id === id) await openNext();
+  if(r.fileId || !isBlank(r)) notice('「' + (r.title || '제목 없는 원고') + '」을(를) 휴지통으로 옮겼습니다.', '되돌리기', () => { $('#notice').hidden = true; restoreMs(id); });
+  Drive.soon(1500);
+}
+async function restoreMs(id){
+  await DB.update(id, x => x ? Object.assign({}, x, {trashed: false, trashedAt: null, dirty: true}) : undefined);
+  await refreshList();
+  await openMs(id);
+  setSave('saved', '휴지통에서 되살렸습니다');
+  Drive.soon(1500);
+}
+async function purgeMs(ids){
+  for(const id of ids) await DB.update(id, r => !r ? undefined : r.fileId ? Object.assign({}, r, {deleted: true, dirty: false}) : null);
+  await refreshList();
+  Drive.soon(500);
+}
+async function purgeOldTrash(){
+  const limit = Date.now() - TRASH_DAYS * 86400000;
+  const old = (await DB.all()).filter(r => r.trashed && !r.deleted && (r.trashedAt || 0) < limit).map(r => r.id);
+  if(old.length) await purgeMs(old);
+}
 async function removeMs(id){
   await DB.update(id, r => !r ? undefined : r.fileId ? Object.assign({}, r, {deleted: true, dirty: false}) : null);
   if(cur && cur.id === id){ cur = null; dirty = false; }
@@ -216,6 +284,9 @@ async function onRemote(ch){
     const next = list.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
     if(next) await openMs(next.id); else await newMs();
     notice('지금 열려 있던 원고가 다른 기기에서 삭제되었습니다.');
+  } else if(cur && ch.updated.has(cur.id) && !list.find(x => x.id === cur.id)){
+    await openNext();
+    notice('지금 열려 있던 원고를 다른 기기에서 휴지통으로 옮겼습니다.');
   } else if(cur && ch.updated.has(cur.id) && !dirty){
     const r = await DB.get(cur.id), top = $('#scroll').scrollTop;
     if(r){ setContent(r.html, r.title); $('#scroll').scrollTop = top; setSave('saved', '다른 기기의 내용을 받았습니다'); }
@@ -483,7 +554,7 @@ $('#exTxt').onclick = async () => {
 };
 $('#exBackup').onclick = async () => {
   closeMenu(); await flush();
-  const all = (await DB.all()).filter(r => !r.deleted).map(r => ({title: r.title, html: r.html, chars: r.chars, updatedAt: r.updatedAt}));
+  const all = (await DB.all()).filter(r => !r.deleted && !r.trashed).map(r => ({title: r.title, html: r.html, chars: r.chars, updatedAt: r.updatedAt}));
   const d = new Date(), pad = n => String(n).padStart(2, '0');
   saved(await download('원고백업_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '.json', new Blob([JSON.stringify({app: 'wongo', v: 1, manuscripts: all})], {type: 'application/json'})), '원고 ' + all.length + '편을 백업했습니다');
 };
@@ -603,10 +674,10 @@ const Drive = (() => {
         const d = typeof raw === 'string' ? JSON.parse(raw) : raw;
         let outcome = null;
         await DB.update(id, r => {
-          if(!r){ outcome = 'added'; return {id, title: d.title || '', html: d.html || '', chars: d.chars || 0, updatedAt: d.updatedAt || Date.now(), dirty: false, fileId: f.id, rev: f.version}; }
+          if(!r){ outcome = 'added'; return {id, title: d.title || '', html: d.html || '', chars: d.chars || 0, updatedAt: d.updatedAt || Date.now(), trashed: !!d.trashed, trashedAt: d.trashedAt || null, dirty: false, fileId: f.id, rev: f.version}; }
           if(r.deleted) return undefined;
-          if(!r.dirty){ outcome = 'updated'; return Object.assign({}, r, {title: d.title, html: d.html, chars: d.chars, updatedAt: d.updatedAt, dirty: false, fileId: f.id, rev: f.version}); }
-          if(r.html === d.html && r.title === d.title) return Object.assign({}, r, {dirty: false, fileId: f.id, rev: f.version});
+          if(!r.dirty){ outcome = 'updated'; return Object.assign({}, r, {title: d.title, html: d.html, chars: d.chars, updatedAt: d.updatedAt, trashed: !!d.trashed, trashedAt: d.trashedAt || null, dirty: false, fileId: f.id, rev: f.version}); }
+          if(r.html === d.html && r.title === d.title && !!r.trashed === !!d.trashed) return Object.assign({}, r, {dirty: false, fileId: f.id, rev: f.version});
           outcome = 'conflict'; return Object.assign({}, r, {fileId: f.id, rev: f.version});
         });
         if(outcome === 'added') ch.added.add(id);
@@ -628,7 +699,7 @@ const Drive = (() => {
       for(const l of await DB.all()){
         if(l.deleted || !l.dirty) continue;
         if(!l.fileId && isBlank(l)) continue;  // 아무것도 쓰지 않은 새 원고는 올리지 않음
-        const body = JSON.stringify({app: 'wongo', v: 1, id: l.id, title: l.title, html: l.html, chars: l.chars, updatedAt: l.updatedAt});
+        const body = JSON.stringify({app: 'wongo', v: 1, id: l.id, title: l.title, html: l.html, chars: l.chars, updatedAt: l.updatedAt, trashed: !!l.trashed, trashedAt: l.trashedAt || null});
         const create = {name: safeName(l.title) + '.json', parents: [data], mimeType: 'application/json', appProperties: {kind: 'ms', wpId: l.id}};
         let res;
         if(l.fileId){
@@ -756,6 +827,7 @@ window.__wongo = {paragraphs, DB, Drive, flush};
 (async function boot(){
   applyPrefs();
   if(narrow()) drawer(false);
+  await purgeOldTrash();
   await refreshList();
   const last = lsGet('last', null);
   const pick = list.find(x => x.id === last) || list.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
