@@ -1,6 +1,6 @@
 /* 오프라인 실행: 앱 파일을 기기에 보관해 두고, 인터넷이 없어도 열리게 한다.
    앱 파일을 고치면 VERSION을 올려야 기기에 새 버전이 들어간다. */
-const VERSION = 'wongo-v3';
+const VERSION = 'wongo-v4';
 const FONTS = 'wongo-fonts';
 const SHELL = [
   './', 'index.html', 'app.js', 'hangul.js', 'hwpx-template.js', 'config.js', 'manifest.webmanifest',

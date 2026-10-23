@@ -17,7 +17,7 @@ prefs.ls = 0; prefs.wrap = 'char';  // 자간 0, 글자 단위 줄 나눔으로 
 const savePrefs = () => lsSet('prefs', prefs);
 function applyPrefs(){
   $('#font').value = prefs.font; if($('#font').selectedIndex < 0) $('#font').selectedIndex = 0;
-  $('#fsize').value = prefs.fs; $('#lh').value = prefs.lh; $('#lhVal').textContent = String(Math.round(prefs.lh * 100) / 100);
+  $('#fsize').value = prefs.fs; $('#fsVal').textContent = prefs.fs; $('#lh').value = prefs.lh; $('#lhVal').textContent = String(Math.round(prefs.lh * 100) / 100);
   $('#indent').checked = prefs.indent;
   paper.style.setProperty('--font', $('#font').value);
   paper.style.setProperty('--fs', prefs.fs + 'px');
@@ -380,11 +380,11 @@ function paragraphs(root){
   const end = () => { if(p){ paras.push(p); p = null; } };
   (function walk(node, fmt, chap){
     for(const n of node.childNodes){
-      if(n.nodeType === 3){ if(!p) start(chap); if(n.nodeValue) p.runs.push({t: n.nodeValue, b: fmt.b, i: fmt.i}); }
+      if(n.nodeType === 3){ if(!p) start(chap); if(n.nodeValue) p.runs.push({t: n.nodeValue, b: fmt.b, i: fmt.i, r: fmt.r || 1}); }
       else if(n.nodeType === 1){
         const tag = n.tagName;
         if(tag === 'BR'){ if(!p) start(chap); end(); continue; }
-        const f = {b: fmt.b || tag === 'B' || tag === 'STRONG' || /bold|[6-9]00/.test(n.style.fontWeight), i: fmt.i || tag === 'I' || tag === 'EM' || n.style.fontStyle === 'italic'};
+        const f = {b: fmt.b || tag === 'B' || tag === 'STRONG' || /bold|[6-9]00/.test(n.style.fontWeight), i: fmt.i || tag === 'I' || tag === 'EM' || n.style.fontStyle === 'italic', r: n.classList && n.classList.contains('fs') ? (Number(n.dataset.r) || 1) : (fmt.r || 1)};
         if(/^(DIV|P|H[1-6]|LI)$/.test(tag)){
           end(); const c = chap || n.classList.contains('chap'); const before = paras.length;
           walk(n, f, c);
@@ -392,14 +392,14 @@ function paragraphs(root){
         } else walk(n, f, chap);
       }
     }
-  })(root, {b: false, i: false}, false);
+  })(root, {b: false, i: false, r: 1}, false);
   end();
   return paras;
 }
 function escapeHtml(s){ return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function parasToHtml(paras){
   return paras.map(p => {
-    const inner = p.runs.map(r => { let s = escapeHtml(r.t.replace(/\t/g, ' ')); if(r.i) s = '<i>' + s + '</i>'; if(r.b) s = '<b>' + s + '</b>'; return s; }).join('');
+    const inner = p.runs.map(r => { let s = escapeHtml(r.t.replace(/\t/g, ' ')); if(r.i) s = '<i>' + s + '</i>'; if(r.b) s = '<b>' + s + '</b>'; if(r.r && r.r !== 1) s = '<span class="fs" data-r="' + r.r + '" style="font-size:' + r.r + 'em">' + s + '</span>'; return s; }).join('');
     return '<div' + (p.chap ? ' class="chap"' : '') + '>' + (inner || '<br>') + '</div>';
   }).join('');
 }
@@ -500,7 +500,7 @@ async function docxBlob(paras, o){
       ? '<w:pPr><w:keepNext/><w:jc w:val="left"/><w:spacing w:before="480" w:after="240" w:line="' + line + '" w:lineRule="auto"/></w:pPr>'
       : '<w:pPr><w:jc w:val="both"/><w:spacing w:after="0" w:line="' + line + '" w:lineRule="auto"/>' + (o.indent ? '<w:ind w:firstLine="' + ind + '" w:firstLineChars="100"/>' : '') + '</w:pPr>';
     const runs = p.runs.map(r => {
-      const rpr = (r.b || p.chap ? '<w:b/>' : '') + (r.i ? '<w:i/>' : '') + (p.chap ? '<w:sz w:val="' + Math.round(sz * 1.2) + '"/>' : '');
+      const rpr = (r.b || p.chap ? '<w:b/>' : '') + (r.i ? '<w:i/>' : '') + ((p.chap ? 1.2 : 1) * (r.r || 1) !== 1 ? '<w:sz w:val="' + Math.round(sz * (p.chap ? 1.2 : 1) * (r.r || 1)) + '"/>' : '');
       return '<w:r>' + (rpr ? '<w:rPr>' + rpr + '</w:rPr>' : '') + '<w:t xml:space="preserve">' + xmlEsc(r.t) + '</w:t></w:r>';
     }).join('');
     return '<w:p>' + ppr + runs + '</w:p>';
@@ -544,6 +544,107 @@ document.addEventListener('click', e => { if(openPop && !e.target.closest('.pop'
 document.querySelectorAll('.pop.menu').forEach(m => m.addEventListener('click', e => { if(e.target.closest('.mi')) setTimeout(closePops, 0); }));
 window.addEventListener('resize', closePops);
 const closeMenu = closePops;
+
+/* ---------- 글자 크기: 전체(이 기기 설정) + 고른 부분(원고에 저장) ----------
+   고른 부분은 <span class="fs" data-r="기준 대비 비율">로 감싼다. 비율이라 전체 크기를 바꾸면 함께 커지고 작아진다. */
+let fsLastSel = null, fsRange = null, fsSpans = null;
+document.addEventListener('selectionchange', () => {
+  const sel = getSelection(); if(!sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  if(!paper.contains(r.commonAncestorContainer)) return;
+  fsLastSel = r.collapsed ? null : r.cloneRange();
+});
+function fsCurrentRange(){
+  const sel = getSelection();
+  if(sel.rangeCount){ const r = sel.getRangeAt(0); if(!r.collapsed && paper.contains(r.commonAncestorContainer)) return r.cloneRange(); }
+  return fsLastSel && !fsLastSel.collapsed && paper.contains(fsLastSel.commonAncestorContainer) ? fsLastSel.cloneRange() : null;
+}
+function fsRatioOf(el){
+  for(let n = el; n && n !== paper; n = n.parentNode) if(n.classList && n.classList.contains('fs')) return Number(n.dataset.r) || 1;
+  return 1;
+}
+function fsWrap(range){
+  const nodes = [], w = document.createTreeWalker(paper, NodeFilter.SHOW_TEXT); let n;
+  while((n = w.nextNode())) if(n.nodeValue && range.intersectsNode(n)) nodes.push(n);
+  const spans = [];
+  for(let t of nodes){
+    const s = t === range.startContainer ? range.startOffset : 0;
+    const e = t === range.endContainer ? range.endOffset : t.nodeValue.length;
+    if(e <= s) continue;
+    if(e < t.nodeValue.length) t.splitText(e);
+    if(s > 0) t = t.splitText(s);
+    const sp = document.createElement('span'); sp.className = 'fs';
+    t.parentNode.insertBefore(sp, t); sp.appendChild(t); spans.push(sp);
+  }
+  return spans;
+}
+function fsSet(spans, ratio){
+  for(const sp of spans){
+    const pr = fsRatioOf(sp.parentNode);
+    sp.dataset.r = String(ratio);
+    sp.style.fontSize = (Math.round(ratio / pr * 1000) / 1000) + 'em';
+  }
+}
+function fsRangeOf(spans){
+  const live = spans.filter(sp => sp.isConnected && sp.firstChild);
+  if(!live.length) return null;
+  const a = live[0].firstChild, z = live[live.length - 1].lastChild, r = document.createRange();
+  r.setStart(a, 0); r.setEnd(z, z.nodeType === 3 ? z.nodeValue.length : z.childNodes.length);
+  return r;
+}
+function fsCleanup(){
+  paper.querySelectorAll('span.fs').forEach(sp => {
+    if(!sp.textContent || Math.abs((Number(sp.dataset.r) || 1) - fsRatioOf(sp.parentNode)) < 0.001) sp.replaceWith(...sp.childNodes);
+  });
+}
+function fsInit(){
+  fsRange = fsCurrentRange(); fsSpans = null;
+  const n = fsRange ? fsRange.toString().replace(/\s/g, '').length : 0;
+  if(!n) fsRange = null;
+  $('#selSize').disabled = !n; $('#selSizeReset').disabled = !n;
+  $('#selSizeHint').textContent = n ? '고른 글 ' + n.toLocaleString() + '자' : '글을 끌어서 고른 뒤 열면 그 부분만 바꿀 수 있습니다';
+  if(n){
+    const c = fsRange.startContainer, el = c.nodeType === 3 ? c.parentNode : c;
+    const px = Math.round(prefs.fs * fsRatioOf(el));
+    $('#selSize').value = px; $('#selSizeVal').textContent = px;
+  } else $('#selSizeVal').textContent = '–';
+}
+$('#fmtBtn').addEventListener('click', () => { if(!$('#fmtPop').hidden) fsInit(); });
+$('#selSize').addEventListener('input', () => {
+  if(!fsRange) return;
+  const px = +$('#selSize').value;
+  if(!fsSpans) fsSpans = fsWrap(fsRange);
+  fsSet(fsSpans, Math.round(px / prefs.fs * 1000) / 1000);
+  $('#selSizeVal').textContent = px;
+});
+$('#selSize').addEventListener('change', () => {
+  if(!fsSpans) return;
+  const r = fsRangeOf(fsSpans); fsCleanup(); fsRange = r; fsSpans = null;
+  onEdit();
+});
+function fsReset(range){
+  const sc = range.startContainer, so = range.startOffset, ec = range.endContainer, eo = range.endOffset;
+  const mk = () => { const r = document.createRange(); r.setStart(sc, so); r.setEnd(ec, eo); return r; };
+  paper.querySelectorAll('span.fs').forEach(sp => {
+    if(!sp.isConnected) return;
+    const tw = document.createTreeWalker(sp, NodeFilter.SHOW_TEXT), first = tw.nextNode(); if(!first) return;
+    let last = first, t; while((t = tw.nextNode())) last = t;
+    let cur; try{ cur = mk(); }catch(e){ return; }
+    if(cur.comparePoint(first, 0) === 0 && cur.comparePoint(last, last.nodeValue.length) === 0) sp.replaceWith(...sp.childNodes);
+  });
+  let nr; try{ nr = mk(); }catch(e){ fsCleanup(); return null; }
+  const spans = fsWrap(nr); fsSet(spans, 1);
+  const after = fsRangeOf(spans); fsCleanup();
+  return after;
+}
+$('#selSizeReset').onclick = () => {
+  if(!fsRange) return;
+  if(fsSpans){ const r0 = fsRangeOf(fsSpans); fsCleanup(); fsRange = r0 || fsRange; fsSpans = null; }
+  const r = fsReset(fsRange); fsRange = r; fsSpans = null;
+  $('#selSize').value = prefs.fs; $('#selSizeVal').textContent = prefs.fs;
+  onEdit();
+};
+
 
 $('#exHwpx').onclick = async () => { closeMenu(); flush(); saved(await download(fileBase() + '.hwpx', await hwpxBlob()), '한글 파일로 내보냄'); };
 $('#exDocx').onclick = async () => { closeMenu(); flush(); saved(await download(fileBase() + '.docx', await docxBlob(paragraphs(paper), {px: prefs.fs, lh: prefs.lh, indent: prefs.indent, ls: prefs.ls, font: curFont().dataset.w, fontKo: curFont().dataset.wk})), 'Word 파일로 내보냄'); };

@@ -168,8 +168,21 @@ async function zip(files){
 function pushText(para, t, fmt){
   if(!t) return;
   const last = para.runs[para.runs.length - 1];
-  if(last && last.b === fmt.b && last.i === fmt.i) last.t += t;
-  else para.runs.push({t, b: !!fmt.b, i: !!fmt.i});
+  const h = fmt.h || 0;
+  if(last && last.b === !!fmt.b && last.i === !!fmt.i && last.h === h) last.t += t;
+  else para.runs.push({t, b: !!fmt.b, i: !!fmt.i, h});
+}
+/* 글자 크기: 가장 많이 쓰인 크기를 기준(1)으로 삼아 나머지는 비율(r)로 바꾼다 */
+function sizesToRatio(paras){
+  const w = new Map();
+  for(const p of paras) for(const r of p.runs) if(r.h) w.set(r.h, (w.get(r.h) || 0) + r.t.length);
+  let base = 0, best = -1; for(const [h, n] of w) if(n > best){ best = n; base = h; }
+  for(const p of paras) for(const r of p.runs){
+    let ratio = r.h && base ? Math.round(r.h / base * 100) / 100 : 1;
+    if(Math.abs(ratio - 1) < 0.05) ratio = 1;
+    delete r.h; if(ratio !== 1) r.r = ratio;
+  }
+  return paras;
 }
 
 /* ---------- HWPX 읽기 ---------- */
@@ -182,7 +195,7 @@ async function readHwpx(buf){
     const hd = parser.parseFromString(header, 'application/xml');
     for(const cp of hd.getElementsByTagNameNS('*', 'charPr')){
       const kids = [...cp.children].map(c => c.localName);
-      fmts[cp.getAttribute('id')] = {b: kids.includes('bold'), i: kids.includes('italic')};
+      fmts[cp.getAttribute('id')] = {b: kids.includes('bold'), i: kids.includes('italic'), h: Number(cp.getAttribute('height')) || 0};
     }
   }
   const secs = z.names.map(n => [n, /^Contents\/section(\d+)\.xml$/i.exec(n)]).filter(x => x[1]).sort((a, b) => a[1][1] - b[1][1]).map(x => x[0]);
@@ -213,7 +226,7 @@ async function readHwpx(buf){
       }
     }
   }
-  return paras;
+  return sizesToRatio(paras);
 }
 
 /* ---------- CFB(복합 문서) 읽기 ---------- */
@@ -308,7 +321,7 @@ async function readHwp(buf){
   if(di) for(const r of records(di)){
     if(r.tag === 21 && r.data.length >= 50){
       const pr = new DataView(r.data.buffer, r.data.byteOffset).getUint32(46, true);
-      shapes.push({i: !!(pr & 1), b: !!(pr & 2)});
+      shapes.push({i: !!(pr & 1), b: !!(pr & 2), h: new DataView(r.data.buffer, r.data.byteOffset).getInt32(42, true)});
     }
   }
   const paras = [];
@@ -353,7 +366,7 @@ async function readHwp(buf){
     finish();
   }
   if(!paras.length) throw new Error('hwp_empty');
-  return paras;
+  return sizesToRatio(paras);
 }
 
 /* ---------- 불러오기 입구 ---------- */
@@ -398,6 +411,7 @@ function buildHeader(xml, o){
   const h = o.height;
   mkChar('n', h, false, false); mkChar('b', h, true, false); mkChar('i', h, false, true); mkChar('bi', h, true, true);
   mkChar('c', Math.round(h * 1.2), true, false); mkChar('ci', Math.round(h * 1.2), true, true);
+  for(const v of (o.variants || [])) if(!(v.key in ids)) mkChar(v.key, v.height, v.b, v.i);
   cps.setAttribute('itemCnt', String(cps.children.length));
 
   const pps = byName('paraProperties')[0], pp0 = [...pps.children].find(c => c.getAttribute('id') === '0');
@@ -431,11 +445,23 @@ function buildHeader(xml, o){
 async function writeHwpx(paras, o, T){
   const height = Math.round(o.pt * 100);
   const spacing = Math.max(-50, Math.min(50, Math.round(o.ls || 0)));
-  const {xml: header, ids} = buildHeader(T.header, {font: o.font, height, linePct: Math.round(o.lh * 100), indent: o.indent, spacing, wrapWord: o.wrap === 'word'});
+  /* 글자 모양 열쇠: 크기 비율(r)이 1이 아니면 그 크기의 글자 모양을 따로 만든다 */
+  const charKey = (p, r) => {
+    const ratio = (r && r.r) || 1;
+    if(ratio === 1) return p.chap ? (r && r.i ? 'ci' : 'c') : (r && r.b && r.i ? 'bi' : r && r.b ? 'b' : r && r.i ? 'i' : 'n');
+    const b = p.chap || !!r.b, i = !!r.i, hh = Math.round(height * ratio * (p.chap ? 1.2 : 1));
+    return 'v' + (b ? 1 : 0) + (i ? 1 : 0) + '_' + hh;
+  };
+  const variants = [];
+  for(const p of paras) for(const r of p.runs){
+    const k = charKey(p, r);
+    if(k[0] === 'v' && !variants.some(v => v.key === k)){ const [bi, hh] = k.slice(1).split('_'); variants.push({key: k, b: bi[0] === '1', i: bi[1] === '1', height: +hh}); }
+  }
+  const {xml: header, ids} = buildHeader(T.header, {font: o.font, height, linePct: Math.round(o.lh * 100), indent: o.indent, spacing, wrapWord: o.wrap === 'word', variants});
   const runXml = (p) => {
     if(!p.runs.length || p.runs.every(r => !r.t)) return '<hp:run charPrIDRef="' + (p.chap ? ids.c : ids.n) + '"><hp:t/></hp:run>';
     return p.runs.filter(r => r.t).map(r => {
-      const cp = p.chap ? (r.i ? ids.ci : ids.c) : r.b && r.i ? ids.bi : r.b ? ids.b : r.i ? ids.i : ids.n;
+      const cp = ids[charKey(p, r)];
       const t = xesc(r.t).replace(/\t/g, '<hp:tab/>');
       return '<hp:run charPrIDRef="' + cp + '"><hp:t>' + t + '</hp:t></hp:run>';
     }).join('');
