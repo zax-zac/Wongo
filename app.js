@@ -1,4 +1,4 @@
-/* 원고 편집기 — 기기에 먼저 저장하고, 연결되면 구글 드라이브와 맞춘다 */
+/* MYWONGO — 기기에 먼저 저장하고, 연결되면 구글 드라이브와 맞춘다 */
 (() => {
 'use strict';
 const $ = s => document.querySelector(s);
@@ -457,7 +457,7 @@ const importErrors = {
   hwp_password: '암호가 걸린 한글 문서는 열 수 없습니다. 한글에서 암호를 풀고 다시 저장해 주세요',
   hwp_distribution: '배포용 문서는 열 수 없습니다. 한글에서 일반 문서로 저장해 주세요',
   hwp_empty: '문서에서 본문을 찾지 못했습니다', hwpx_empty: '문서에서 본문을 찾지 못했습니다',
-  unknown_format: '한글 문서 형식이 아닙니다', backup: '원고 편집기 백업 파일이 아닙니다',
+  unknown_format: '한글 문서 형식이 아닙니다', backup: 'MYWONGO 백업 파일이 아닙니다',
   unsupported: 'HWP·HWPX·TXT 파일이나 원고 백업(.json)만 불러올 수 있습니다'
 };
 $('#importBtn').addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#fileIn').click(); } });
@@ -723,7 +723,7 @@ $('#exDrive').onclick = async () => {
   try{
     const res = await Drive.saveHwpx(cur.id, titleVal(), await hwpxBlob());
     setSave('saved', '드라이브에 저장함 · ' + titleVal() + '.hwpx');
-    if(res && res.webViewLink) notice('드라이브 \'원고 편집기\' 폴더에 「' + titleVal() + '.hwpx」를 저장했습니다.', '드라이브에서 열기', () => window.open(res.webViewLink, '_blank', 'noopener'));
+    if(res && res.webViewLink) notice('드라이브 \'MYWONGO\' 폴더에 「' + titleVal() + '.hwpx」를 저장했습니다.', '드라이브에서 열기', () => window.open(res.webViewLink, '_blank', 'noopener'));
   }catch(e){ setSave('error', Drive.errorText(e)); }
 };
 
@@ -731,7 +731,7 @@ $('#exDrive').onclick = async () => {
 const Drive = (() => {
   const CID = ((window.WONGO_CONFIG || {}).googleClientId || '').trim();
   const SCOPE = 'https://www.googleapis.com/auth/drive.file';
-  const ROOT = '원고 편집기', DATA = '동기화 자료 (지우지 마세요)';
+  const ROOT = 'MYWONGO', OLD_ROOT = '원고 편집기', DATA = '동기화 자료 (지우지 마세요)';
   let token = null, exp = 0, folders = null, running = false, again = false, soonT = null, lastSync = 0, st = 'idle';
   let wanted = !!lsGet('drive-on', false);
   const saved = lsGet('token', null);
@@ -791,9 +791,21 @@ const Drive = (() => {
     const body = {name, mimeType: 'application/vnd.google-apps.folder'}; if(parent) body.parents = [parent];
     return (await api('/drive/v3/files?fields=id', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).id;
   }
+  /* 예전 이름('원고 편집기') 폴더가 있고 새 이름 폴더가 없으면 이름만 바꿔서 이어 쓴다 */
+  async function rootFolder(){
+    const q = n => "mimeType='application/vnd.google-apps.folder' and name='" + n + "' and trashed=false";
+    const now = await find(q(ROOT), 'id');
+    if(now.length) return now[0].id;
+    const old = await find(q(OLD_ROOT), 'id');
+    if(old.length){
+      await api('/drive/v3/files/' + old[0].id + '?fields=id', {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: ROOT})});
+      return old[0].id;
+    }
+    return folder(ROOT, null);
+  }
   async function ensureFolders(){
     if(folders) return folders;
-    const root = await folder(ROOT, null), data = await folder(DATA, root);
+    const root = await rootFolder(), data = await folder(DATA, root);
     return (folders = {root, data});
   }
   function upload(fileId, meta, body, mime){
