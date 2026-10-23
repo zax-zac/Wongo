@@ -17,7 +17,7 @@ prefs.ls = 0; prefs.wrap = 'char';  // 자간 0, 글자 단위 줄 나눔으로 
 const savePrefs = () => lsSet('prefs', prefs);
 function applyPrefs(){
   $('#font').value = prefs.font; if($('#font').selectedIndex < 0) $('#font').selectedIndex = 0;
-  $('#fsize').value = prefs.fs; $('#fsVal').textContent = prefs.fs; $('#lh').value = prefs.lh; $('#lhVal').textContent = String(Math.round(prefs.lh * 100) / 100);
+  if(fsTarget !== 'sel'){ $('#fsize').value = prefs.fs; $('#fsVal').textContent = prefs.fs; } $('#lh').value = prefs.lh; $('#lhVal').textContent = String(Math.round(prefs.lh * 100) / 100);
   $('#indent').checked = prefs.indent;
   paper.style.setProperty('--font', $('#font').value);
   paper.style.setProperty('--fs', prefs.fs + 'px');
@@ -343,7 +343,15 @@ if($('#chapBtn')) $('#chapBtn').onclick = () => {
   b.classList.toggle('chap'); onEdit(); outline();
 };
 $('#font').onchange = () => { prefs.font = $('#font').value; savePrefs(); applyPrefs(); };
-$('#fsize').oninput = () => { const v = +$('#fsize').value; if(v >= 11 && v <= 30){ prefs.fs = v; savePrefs(); applyPrefs(); } };
+$('#fsize').oninput = () => {
+  const v = +$('#fsize').value;
+  if(fsTarget === 'sel' && fsRange){  // 고른 부분만
+    if(!fsSpans) fsSpans = fsWrap(fsRange);
+    fsSet(fsSpans, Math.round(v / prefs.fs * 1000) / 1000);
+    $('#fsVal').textContent = v; return;
+  }
+  if(v >= 11 && v <= 30){ prefs.fs = v; savePrefs(); applyPrefs(); }
+};
 $('#lh').oninput = () => { prefs.lh = +$('#lh').value; savePrefs(); applyPrefs(); };
 $('#indent').onchange = () => { prefs.indent = $('#indent').checked; savePrefs(); applyPrefs(); };
 
@@ -568,20 +576,24 @@ document.querySelectorAll('.pop.menu').forEach(m => m.addEventListener('click', 
 window.addEventListener('resize', closePops);
 const closeMenu = closePops;
 
-/* ---------- 글자 크기: 전체(이 기기 설정) + 고른 부분(원고에 저장) ----------
-   고른 부분은 <span class="fs" data-r="기준 대비 비율">로 감싼다. 비율이라 전체 크기를 바꾸면 함께 커지고 작아진다. */
-let fsLastSel = null, fsRange = null, fsSpans = null;
+/* ---------- 글자 크기: 슬라이더 하나 ----------
+   글을 고른 채 서식을 열면 고른 부분만, 아니면 원고 전체(이 기기 설정)를 바꾼다.
+   고른 부분은 <span class="fs" data-r="기준 대비 비율">로 감싸므로 전체 크기를 바꾸면 함께 따라간다. */
+var fsTarget = 'all';
+let fsLastSel = null, fsRange = null, fsSpans = null, fsSnap = null;
+function fsLiveRange(){
+  const sel = getSelection();
+  if(sel.rangeCount){ const r = sel.getRangeAt(0); if(!r.collapsed && paper.contains(r.commonAncestorContainer)) return r.cloneRange(); }
+  return null;
+}
 document.addEventListener('selectionchange', () => {
   const sel = getSelection(); if(!sel.rangeCount) return;
   const r = sel.getRangeAt(0);
   if(!paper.contains(r.commonAncestorContainer)) return;
   fsLastSel = r.collapsed ? null : r.cloneRange();
 });
-function fsCurrentRange(){
-  const sel = getSelection();
-  if(sel.rangeCount){ const r = sel.getRangeAt(0); if(!r.collapsed && paper.contains(r.commonAncestorContainer)) return r.cloneRange(); }
-  return fsLastSel && !fsLastSel.collapsed && paper.contains(fsLastSel.commonAncestorContainer) ? fsLastSel.cloneRange() : null;
-}
+/* 휴대폰·태블릿에서는 버튼을 누르는 순간 선택이 풀리므로, 손가락이 닿는 때의 선택을 잡아 둔다 */
+['pointerdown', 'touchstart', 'mousedown'].forEach(ev => $('#fmtBtn').addEventListener(ev, () => { const r = fsLiveRange() || fsLastSel; if(r) fsSnap = r.cloneRange(); }, {capture: true, passive: true}));
 function fsRatioOf(el){
   for(let n = el; n && n !== paper; n = n.parentNode) if(n.classList && n.classList.contains('fs')) return Number(n.dataset.r) || 1;
   return 1;
@@ -620,31 +632,6 @@ function fsCleanup(){
     if(!sp.textContent || Math.abs((Number(sp.dataset.r) || 1) - fsRatioOf(sp.parentNode)) < 0.001) sp.replaceWith(...sp.childNodes);
   });
 }
-function fsInit(){
-  fsRange = fsCurrentRange(); fsSpans = null;
-  const n = fsRange ? fsRange.toString().replace(/\s/g, '').length : 0;
-  if(!n) fsRange = null;
-  $('#selSize').disabled = !n; $('#selSizeReset').disabled = !n;
-  $('#selSizeHint').textContent = n ? '고른 글 ' + n.toLocaleString() + '자' : '글을 끌어서 고른 뒤 열면 그 부분만 바꿀 수 있습니다';
-  if(n){
-    const c = fsRange.startContainer, el = c.nodeType === 3 ? c.parentNode : c;
-    const px = Math.round(prefs.fs * fsRatioOf(el));
-    $('#selSize').value = px; $('#selSizeVal').textContent = px;
-  } else $('#selSizeVal').textContent = '–';
-}
-$('#fmtBtn').addEventListener('click', () => { if(!$('#fmtPop').hidden) fsInit(); });
-$('#selSize').addEventListener('input', () => {
-  if(!fsRange) return;
-  const px = +$('#selSize').value;
-  if(!fsSpans) fsSpans = fsWrap(fsRange);
-  fsSet(fsSpans, Math.round(px / prefs.fs * 1000) / 1000);
-  $('#selSizeVal').textContent = px;
-});
-$('#selSize').addEventListener('change', () => {
-  if(!fsSpans) return;
-  const r = fsRangeOf(fsSpans); fsCleanup(); fsRange = r; fsSpans = null;
-  onEdit();
-});
 function fsReset(range){
   const sc = range.startContainer, so = range.startOffset, ec = range.endContainer, eo = range.endOffset;
   const mk = () => { const r = document.createRange(); r.setStart(sc, so); r.setEnd(ec, eo); return r; };
@@ -660,11 +647,40 @@ function fsReset(range){
   const after = fsRangeOf(spans); fsCleanup();
   return after;
 }
+function fsSelPx(){
+  const c = fsRange.startContainer, el = c.nodeType === 3 ? c.parentNode : c;
+  return Math.round(prefs.fs * fsRatioOf(el));
+}
+function setFsTarget(t){
+  if(t === 'sel' && !fsRange) t = 'all';
+  fsTarget = t;
+  $('#fsTSel').classList.toggle('on', t === 'sel'); $('#fsTAll').classList.toggle('on', t === 'all');
+  $('#selSizeReset').hidden = t !== 'sel';
+  const sl = $('#fsize');
+  if(t === 'sel'){ sl.min = 10; sl.max = 48; const px = fsSelPx(); sl.value = px; $('#fsVal').textContent = px; }
+  else { sl.min = 11; sl.max = 30; sl.value = prefs.fs; $('#fsVal').textContent = prefs.fs; }
+}
+function fsInit(){
+  fsRange = fsLiveRange() || (fsSnap && fsSnap.cloneRange()) || null; fsSnap = null; fsSpans = null;
+  const n = fsRange ? fsRange.toString().replace(/\s/g, '').length : 0;
+  if(!n) fsRange = null;
+  $('#fsTargetRow').hidden = !n; $('#fsNote').hidden = !!n;
+  $('#fsSelN').textContent = n ? ' ' + n.toLocaleString() + '자' : '';
+  setFsTarget(n ? 'sel' : 'all');
+}
+$('#fmtBtn').addEventListener('click', () => { if(!$('#fmtPop').hidden) fsInit(); else { fsTarget = 'all'; fsRange = null; fsSpans = null; } });
+$('#fsTSel').onclick = () => setFsTarget('sel');
+$('#fsTAll').onclick = () => { if(fsSpans){ const r = fsRangeOf(fsSpans); fsCleanup(); fsRange = r || fsRange; fsSpans = null; onEdit(); } setFsTarget('all'); };
+$('#fsize').addEventListener('change', () => {
+  if(fsTarget !== 'sel' || !fsSpans) return;
+  const r = fsRangeOf(fsSpans); fsCleanup(); fsRange = r || fsRange; fsSpans = null;
+  onEdit();
+});
 $('#selSizeReset').onclick = () => {
   if(!fsRange) return;
   if(fsSpans){ const r0 = fsRangeOf(fsSpans); fsCleanup(); fsRange = r0 || fsRange; fsSpans = null; }
-  const r = fsReset(fsRange); fsRange = r; fsSpans = null;
-  $('#selSize').value = prefs.fs; $('#selSizeVal').textContent = prefs.fs;
+  fsRange = fsReset(fsRange) || fsRange; fsSpans = null;
+  $('#fsize').value = prefs.fs; $('#fsVal').textContent = prefs.fs;
   onEdit();
 };
 
