@@ -1,5 +1,7 @@
 # MYWONGO
 
+> **새 주소로 옮겼습니다 (2026년 11월)**: 앱은 https://lightning-write.github.io/ , 내 라이트닝 페이지로 바로 가기는 https://lightning-write.github.io/lightning 입니다. 저장소도 [lightning-write/lightning-write.github.io](https://github.com/lightning-write/lightning-write.github.io)로 옮겼고, 이 저장소는 더 고치지 않습니다. 이 주소의 앱을 열면 아래쪽 띠에서 **새 주소로 옮기기**를 눌러 옮길 수 있습니다.
+
 소설 원고용 편집기입니다. 인터넷이 없어도 열리고, 연결되면 구글 드라이브에 원고를 맞춰 둡니다.
 
 - 코펍 바탕, 양쪽 정렬, 줄간격·들여쓰기 조절
